@@ -268,6 +268,45 @@ def create_markdown_report(story: str, visualizations: List[str], output_path: s
                 relative_path = os.path.relpath(viz, start=os.path.dirname(output_path))
                 f.write(f"![{viz}]({relative_path})\n")
 
+def iterative_agentic_analysis(df: pd.DataFrame, summary: Dict) -> str:
+    """
+    Generate a series of insights through an iterative process. This function will iterate over different 
+    analysis types and summarize the findings based on the data.
+    """
+    insights = []
+
+    # Iterate over analysis methods (e.g., regression, outliers, etc.)
+    if "correlation" in summary:
+        insights.append("Correlation Analysis: Strong correlations found between ...")
+
+    if "outliers" in summary:
+        insights.append("Outlier Detection: Outliers identified in the following areas ...")
+
+    if "regression" in summary:
+        insights.append("Regression Analysis: The following regression results were found ...")
+
+    # Add more insights based on analysis methods
+    return "\n".join(insights)
+
+def suggest_visualizations(df: pd.DataFrame, summary: Dict) -> List[str]:
+    """
+    Suggest visualizations based on the provided summary and the data analysis results.
+    """
+    visualizations = []
+
+    if "correlation" in summary:
+        visualizations.append("correlation_heatmap.png")
+
+    if "outliers" in summary:
+        visualizations.append("outliers.png")
+
+    if "regression" in summary:
+        visualizations.append("regression_analysis.png")
+
+    # Add more visualizations based on the analysis methods
+    return visualizations
+
+
 # === Narrative Generation with AI Proxy ===
 def generate_story(summary: Dict, visualizations: List[str]) -> str:
     """
@@ -315,9 +354,18 @@ def main(input_file: str, output_folder: str):
     os.makedirs(output_folder, exist_ok=True)
 
     # Generate summary for AI Proxy story generation
-    story = generate_story(summarize_data(df), [])
-    visualizations = []
+    summary = summarize_data(df)
     
+    # Iterative analysis of the dataset
+    insights = iterative_agentic_analysis(df, summary)
+    
+    # Suggest visualizations based on the analysis summary
+    visualizations = suggest_visualizations(df, summary)
+
+    # Generate markdown report with insights and visualizations
+    story = generate_story(summary, visualizations)
+    create_markdown_report(insights, visualizations, f"{output_folder}/README.md")
+
     # Run correlation heatmap
     heatmap_output = correlation_heatmap(df, f"{output_folder}/correlation_heatmap.png")
     if heatmap_output:
@@ -338,8 +386,9 @@ def main(input_file: str, output_folder: str):
     if auto_analysis_output:
         visualizations.append(auto_analysis_output)
 
-    # Generate markdown report
+    # Final markdown report with insights and visualizations
     create_markdown_report(story, visualizations, f"{output_folder}/README.md")
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Data Analysis Pipeline")

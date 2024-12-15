@@ -1,199 +1,178 @@
+# /// script
+# dependencies = [
+#   "pandas",
+#   "seaborn",
+#   "matplotlib",
+#   "scikit-learn",
+#   "requests",
+#   "chardet",
+#   "numpy",
+#   "joblib",
+#   "folium",
+#   "plotly",
+#   "Pillow",
+#   "geopy",
+# ]
+# ///
+
 import os
 import sys
-import subprocess
-
-# Ensure pip is installed
-def ensure_pip_installed():
-    try:
-        subprocess.check_call([sys.executable, "-m", "pip", "--version"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        print("pip not found. Installing pip...")
-        try:
-            import ensurepip
-            ensurepip.bootstrap()
-            subprocess.check_call([sys.executable, "-m", "pip", "install", "--upgrade", "pip"])
-            print("pip installed successfully!")
-        except Exception as e:
-            print(f"Failed to install pip: {e}")
-            sys.exit(1)
-
-# Install Python packages if not already installed
-def install_package(package_name, submodules=None):
-    """Installs a Python package if not already installed."""
-    try:
-        __import__(package_name)
-        if submodules:
-            for submodule in submodules:
-                __import__(f"{package_name}.{submodule}")
-    except ImportError:
-        print(f"Installing package: {package_name}...")
-        subprocess.check_call([sys.executable, "-m", "pip", "install", package_name])
-
-# Ensure pip is installed and install required libraries
-ensure_pip_installed()
-
-required_packages = [
-    ("pandas", None),
-    ("seaborn", None),
-    ("matplotlib", None),
-    ("scikit-learn", None),
-    ("requests", None),
-    ("chardet", None),
-    ("numpy", None),
-    ("joblib", ["externals.loky.backend.context"]),
-    ("folium", None),
-    ("plotly", None),
-    ("Pillow", None),
-    ("geopy", None),
-]
-
-for package, submodules in required_packages:
-    install_package(package, submodules)
-
-# Now we import all required libraries
-import warnings
 import pandas as pd
-import seaborn as sns
+import numpy as np
 import matplotlib.pyplot as plt
-from sklearn.preprocessing import StandardScaler
+import seaborn as sns
 from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans
 from sklearn.impute import SimpleImputer
-from joblib.externals.loky.backend.context import set_start_method
-import chardet
-import numpy as np
-import folium
-from folium.plugins import MarkerCluster
-from geopy.geocoders import Nominatim
-from PIL import Image
+from sklearn.preprocessing import StandardScaler
 import requests
-import plotly.express as px
+import argparse
+from typing import List, Dict
 
-# Suppress warnings
-warnings.filterwarnings("ignore")
-set_start_method("loky", force=True)
-
-# Validate and retrieve the AI Proxy Token
+# === Validate and retrieve the AI Proxy Token ===
 try:
     AI_PROXY_TOKEN = os.environ["AIPROXY_TOKEN"]
 except KeyError:
     print("Error: AIPROXY_TOKEN environment variable is not set.")
     sys.exit(1)
 
-# Validate command-line arguments
-if len(sys.argv) != 2:
-    print("Usage: python autolysis.py <csv_file>")
-    sys.exit(1)
+# === Utility Functions ===
+def detect_encoding(filepath: str) -> str:
+    """
+    Detect the encoding of a CSV file to ensure it is read correctly.
+    """
+    try:
+        with open(filepath, 'rb') as f:
+            import chardet
+            result = chardet.detect(f.read())
+            return result['encoding']
+    except ImportError:
+        os.system(f'{sys.executable} -m pip install chardet')
+        import chardet
+        with open(filepath, 'rb') as f:
+            result = chardet.detect(f.read())
+            return result['encoding']
 
-csv_file = sys.argv[1]
-if not os.path.exists(csv_file):
-    print(f"Error: File '{csv_file}' does not exist.")
-    sys.exit(1)
+def save_plot(filename: str, fig=None):
+    """
+    Save a plot with compression.
+    """
+    if fig is None:
+        plt.savefig(filename, format='png', dpi=300, bbox_inches='tight')
+    else:
+        fig.savefig(filename, format='png', dpi=300, bbox_inches='tight')
+    plt.close()
 
-# Function to detect file encoding
-def detect_encoding(file_path):
-    with open(file_path, 'rb') as f:
-        raw_data = f.read()
-    return chardet.detect(raw_data)['encoding']
+def validate_dataset(df: pd.DataFrame) -> None:
+    """
+    Validate the dataset for basic requirements.
+    """
+    if df.empty:
+        raise ValueError("Dataset is empty!")
+    if df.isnull().all().all():
+        raise ValueError("Dataset contains only null values!")
 
-# Function to compress and save plot
-def save_compressed_plot(fig, filename, quality=70):
-    fig.savefig(filename, dpi=150, bbox_inches='tight', format="png")
-    img = Image.open(filename)  # Open the saved image using Pillow
-    img.save(filename, "PNG", optimize=True, quality=quality)  # Compress the image
-    plt.close(fig)  # Close the plot to free up memory
+# === Data Analysis Functions ===
+def load_data(filepath: str) -> pd.DataFrame:
+    """
+    Load the dataset from a CSV file, ensuring correct encoding.
+    """
+    try:
+        encoding = detect_encoding(filepath)
+        df = pd.read_csv(filepath, encoding=encoding)
+        validate_dataset(df)
+        return df
+    except Exception as e:
+        print(f"Error loading dataset {filepath}: {e}")
+        sys.exit(1)
 
-# Function to load data
-def load_data(file_path):
-    encoding = detect_encoding(file_path)
-    return pd.read_csv(file_path, encoding=encoding)
+def clean_and_select_numeric_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Select only numeric columns for analysis, excluding any non-numeric columns (e.g., dates).
+    """
+    numeric_df = df.select_dtypes(include=[np.number])
+    return numeric_df
 
-# Function to summarize data
-def summarize_data(data):
-    summary = {
-        "Missing Values": data.isnull().sum().to_dict(),
-        "Summary Statistics": data.describe(include="all").to_dict()
-    }
-    return summary
+def perform_correlation_analysis(df: pd.DataFrame, save_path: str):
+    """
+    Perform correlation analysis and save the heatmap.
+    """
+    numeric_df = clean_and_select_numeric_columns(df)
+    corr = numeric_df.corr()
+    plt.figure(figsize=(10, 8))
+    sns.heatmap(corr, annot=True, fmt=".2f", cmap="coolwarm")
+    plt.title("Correlation Heatmap")
+    plt.xticks(rotation=90)  # Rotate the x-labels to be vertical
+    save_plot(save_path)
 
-# Outlier Detection using KMeans
+def perform_pca_and_clustering(df: pd.DataFrame, save_path: str):
+    """
+    Perform PCA and KMeans clustering, then save the scatter plot.
+    """
+    numeric_df = clean_and_select_numeric_columns(df)
+    if numeric_df.empty:
+        print("No numeric columns available for PCA and Clustering.")
+        return
+
+    pca = PCA(n_components=2)
+    reduced_data = pca.fit_transform(numeric_df.dropna())  # Ensure no NaN values are present
+    kmeans = KMeans(n_clusters=3, random_state=42)
+    labels = kmeans.fit_predict(reduced_data)
+
+    plt.figure(figsize=(8, 6))
+    sns.scatterplot(x=reduced_data[:, 0], y=reduced_data[:, 1], hue=labels, palette="viridis")
+    plt.title("PCA with KMeans Clustering")
+    save_plot(save_path)
+
 def detect_and_plot_outliers(data, output_file):
+    """
+    Detect outliers using KMeans and plot the results.
+    Outliers are identified based on distance from the centroids of the clusters.
+    """
     numeric_data = data.select_dtypes(include=[np.number])
     
+    # Handle missing data by imputing with the mean of each column
     imputer = SimpleImputer(strategy='mean')
     data_imputed = imputer.fit_transform(numeric_data)
     
+    # Standardize the data to have zero mean and unit variance
     scaler = StandardScaler()
     data_scaled = scaler.fit_transform(data_imputed)
 
+    # Fit KMeans with 3 clusters (you can modify n_clusters based on your data)
     kmeans = KMeans(n_clusters=3, random_state=42)
     kmeans.fit(data_scaled)
     
+    # Compute the distances of points to their respective centroids
     distances = kmeans.transform(data_scaled).min(axis=1)
+    
+    # Define the threshold for outliers (3 standard deviations above the mean distance)
     threshold = distances.mean() + 3 * distances.std()
     outliers = distances > threshold
 
+    # Plotting the outliers vs non-outliers
     fig, ax = plt.subplots(figsize=(8, 6))
-    ax.scatter(np.where(~outliers)[0], distances[~outliers], c='blue', label="Non-Outliers")
-    ax.scatter(np.where(outliers)[0], distances[outliers], c='red', label="Outliers")
+    
+    # Plot non-outliers in blue
+    ax.scatter(np.where(~outliers)[0], distances[~outliers], c='blue', label="Non-Outliers", alpha=0.6)
+    
+    # Plot outliers in red
+    ax.scatter(np.where(outliers)[0], distances[outliers], c='red', label="Outliers", alpha=0.6)
+    
     ax.set_title("Outlier Detection (KMeans)", fontsize=16)
     ax.set_xlabel("Data Points", fontsize=12)
     ax.set_ylabel("Distance from Centroid", fontsize=12)
     ax.legend()
-    plt.tight_layout()
-    save_compressed_plot(fig, output_file)
+    
+    # Save the plot
+    save_plot(output_file, fig)
 
-# Function to generate correlation heatmap
-def generate_correlation_heatmap(data, output_file):
-    numeric_data = data.select_dtypes(include=[np.number])
-    correlation = numeric_data.corr()
-    fig, ax = plt.subplots(figsize=(10, 8))
-    sns.heatmap(correlation, annot=True, cmap="coolwarm", fmt=".2f", ax=ax)
-    ax.set_title("Correlation Heatmap")
-    save_compressed_plot(fig, output_file)
-
-# Function to perform PCA and KMeans clustering
-def perform_pca_and_kmeans(data, output_file):
-    numeric_data = data.select_dtypes(include=[np.number])
-    imputer = SimpleImputer(strategy="mean")
-    scaled_data = StandardScaler().fit_transform(imputer.fit_transform(numeric_data))
-
-    pca = PCA(n_components=2)
-    pca_result = pca.fit_transform(scaled_data)
-
-    kmeans = KMeans(n_clusters=3, random_state=42)
-    clusters = kmeans.fit_predict(scaled_data)
-
-    fig, ax = plt.subplots(figsize=(10, 8))
-    sns.scatterplot(x=pca_result[:, 0], y=pca_result[:, 1], hue=clusters, palette="viridis", ax=ax)
-    ax.set_title("PCA and KMeans Clustering")
-    ax.set_xlabel("Principal Component 1")
-    ax.set_ylabel("Principal Component 2")
-    save_compressed_plot(fig, output_file)
-
-# Function for time series analysis
-def perform_time_series_analysis(data, output_file):
-    time_cols = [col for col in data.columns if pd.api.types.is_datetime64_any_dtype(data[col])]
-    if not time_cols:
-        return False
-    fig = px.line(data, x=time_cols[0], y=data.select_dtypes(include=[np.number]).columns[0], title="Time Series Analysis")
-    fig.write_image(output_file)
-    return True
-
-# Function for geographical analysis
-def perform_geographical_analysis(data, output_file):
-    if {'latitude', 'longitude'}.issubset(data.columns):
-        m = folium.Map(location=[data['latitude'].mean(), data['longitude'].mean()], zoom_start=4)
-        marker_cluster = MarkerCluster().add_to(m)
-        for _, row in data.iterrows():
-            folium.Marker([row['latitude'], row['longitude']]).add_to(marker_cluster)
-        m.save(output_file)
-        return True
-    return False
-
-# Function to generate a story with AI Proxy
-def generate_story(summary, visualizations):
-    summary_str = f"Summary: {summary['Summary Statistics']}\nMissing: {summary['Missing Values']}"
+# === Narrative Generation with AI Proxy ===
+def generate_story(summary: Dict, visualizations: List[str]) -> str:
+    """
+    Generate a comprehensive narrative using the AI Proxy API.
+    """
+    summary_str = f"Summary: {summary['summary_stats']}\nMissing: {summary['missing_values']}"
     prompt = f"""
     Given the following data analysis results:
     {summary_str}
@@ -217,39 +196,68 @@ def generate_story(summary, visualizations):
     else:
         return f"Failed to generate story. Error {response.status_code}: {response.text}"
 
-# Function to save the final report
-def save_report(story, output_file):
-    print(f"Saving the report to {output_file}...")
-    report_content = "# Analysis Report\n\n"
-    report_content += "## Key Insights\n\n"
-    report_content += story
-    report_content += "\n\n## Visualizations\n"
-    if os.path.exists("compressed_correlation_heatmap.png"):
-        report_content += "- ![Correlation Heatmap](compressed_correlation_heatmap.png)\n"
-    if os.path.exists("compressed_pca_kmeans.png"):
-        report_content += "- ![PCA Clustering](compressed_pca_kmeans.png)\n"
-    if os.path.exists("compressed_timeseries.png"):
-        report_content += "- ![Time Series](compressed_timeseries.png)\n"
-    if os.path.exists("compressed_outliers.png"):
-        report_content += "- ![Outlier Detection](compressed_outliers.png)\n"
-    if os.path.exists("geographic_analysis.html"):
-        report_content += "- Interactive Map: geographic_analysis.html\n"
-    with open(output_file, "w", encoding="utf-8") as f:
-        f.write(report_content)
-    print("Report saved successfully!")
+def summarize_data(df: pd.DataFrame) -> Dict:
+    """
+    Summarize the dataset with key statistics and missing values.
+    """
+    summary_stats = df.describe().to_dict()
+    missing_values = df.isnull().sum().to_dict()
+    return {
+        'summary_stats': summary_stats,
+        'missing_values': missing_values
+    }
 
-# Main execution
+def create_markdown_report(story: str, output_path: str, visualizations: List[str]):
+    """
+    Save the narrative as a Markdown file.
+    The visualizations are linked in the Markdown file.
+    """
+    with open(output_path, 'w') as f:
+        f.write("# Analysis Report\n\n")
+        f.write(story + "\n\n")
+        f.write("## Visualizations\n")
+        for viz in visualizations:
+            f.write(f"![{viz}]({viz})\n")
+
+# === Main Workflow ===
+def main():
+    # Parse command-line arguments
+    parser = argparse.ArgumentParser(description="Analyze a CSV dataset and generate a report.")
+    parser.add_argument("csv_file", help="Path to the CSV file to analyze")
+    args = parser.parse_args()
+    
+    dataset_path = args.csv_file
+    output_dir = "."
+
+    print(f"Processing dataset: {dataset_path}")
+    try:
+        df = load_data(dataset_path)
+        summary = summarize_data(df)
+
+        # Correlation Heatmap
+        heatmap_path = os.path.join(output_dir, f"{dataset_path}_correlation.png")
+        perform_correlation_analysis(df, heatmap_path)
+
+        # PCA and KMeans
+        pca_path = os.path.join(output_dir, f"{dataset_path}_pca.png")
+        perform_pca_and_clustering(df, pca_path)
+
+        # Outlier Detection
+        outliers_path = os.path.join(output_dir, f"{dataset_path}_outliers.png")
+        detect_and_plot_outliers(df, outliers_path)
+
+        # Generate Story
+        visualizations = [heatmap_path, pca_path, outliers_path]
+        story = generate_story(summary, visualizations)
+
+        # Save Markdown Report as README.md
+        report_path = os.path.join(output_dir, "README.md")
+        create_markdown_report(story, report_path, visualizations)
+
+        print(f"Analysis for {dataset_path} completed successfully!")
+
+    except Exception as e:
+        print(f"Error processing {dataset_path}: {e}")
+
 if __name__ == "__main__":
-    data = load_data(csv_file)
-    summary = summarize_data(data)
-    generate_correlation_heatmap(data, "compressed_correlation_heatmap.png")
-    perform_pca_and_kmeans(data, "compressed_pca_kmeans.png")
-    time_series_done = perform_time_series_analysis(data, "compressed_timeseries.png")
-    geo_done = perform_geographical_analysis(data, "geographic_analysis.html")
-    detect_and_plot_outliers(data, "compressed_outliers.png")
-    story = generate_story(summary, ["compressed_correlation_heatmap.png", "compressed_pca_kmeans.png", "compressed_outliers.png"])
-    if story:
-        save_report(story, "README.md")
-        print("Analysis complete! Report saved to README.md.")
-    else:
-        print("Failed to generate story. Report not saved.")
+    main()

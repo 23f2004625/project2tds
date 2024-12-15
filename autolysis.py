@@ -81,7 +81,6 @@ def detect_encoding(file_path):
 
 # Function to compress and save plot
 def save_compressed_plot(fig, filename, quality=70):
-    # Save the figure without using 'optimize' argument
     fig.savefig(filename, dpi=150, bbox_inches='tight', format="png")
     img = Image.open(filename)  # Open the saved image using Pillow
     img.save(filename, "PNG", optimize=True, quality=quality)  # Compress the image
@@ -104,43 +103,27 @@ def summarize_data(data):
 def detect_and_plot_outliers(data, output_file):
     numeric_data = data.select_dtypes(include=[np.number])
     
-    # Handle missing values by imputing with the mean of each column
     imputer = SimpleImputer(strategy='mean')
     data_imputed = imputer.fit_transform(numeric_data)
     
-    # Standardize the data
     scaler = StandardScaler()
     data_scaled = scaler.fit_transform(data_imputed)
 
-    # Apply KMeans to detect outliers
     kmeans = KMeans(n_clusters=3, random_state=42)
     kmeans.fit(data_scaled)
     
-    # Calculate distances from the cluster centroids
     distances = kmeans.transform(data_scaled).min(axis=1)
-    
-    # Define the threshold for outliers (3 standard deviations from the mean distance)
     threshold = distances.mean() + 3 * distances.std()
     outliers = distances > threshold
 
-    # Plot the non-outliers and outliers
-    fig, ax = plt.subplots(figsize=(8, 6))  # Create a new figure for plotting
-    ax.scatter(
-        np.where(~outliers)[0], distances[~outliers],
-        c='blue', label="Non-Outliers"
-    )
-    ax.scatter(
-        np.where(outliers)[0], distances[outliers],
-        c='red', label="Outliers"
-    )
-    
+    fig, ax = plt.subplots(figsize=(8, 6))
+    ax.scatter(np.where(~outliers)[0], distances[~outliers], c='blue', label="Non-Outliers")
+    ax.scatter(np.where(outliers)[0], distances[outliers], c='red', label="Outliers")
     ax.set_title("Outlier Detection (KMeans)", fontsize=16)
     ax.set_xlabel("Data Points", fontsize=12)
     ax.set_ylabel("Distance from Centroid", fontsize=12)
     ax.legend()
     plt.tight_layout()
-    
-    # Save the plot with compression
     save_compressed_plot(fig, output_file)
 
 # Function to generate correlation heatmap
@@ -164,7 +147,6 @@ def perform_pca_and_kmeans(data, output_file):
     kmeans = KMeans(n_clusters=3, random_state=42)
     clusters = kmeans.fit_predict(scaled_data)
 
-    # Visualize PCA with clusters
     fig, ax = plt.subplots(figsize=(10, 8))
     sns.scatterplot(x=pca_result[:, 0], y=pca_result[:, 1], hue=clusters, palette="viridis", ax=ax)
     ax.set_title("PCA and KMeans Clustering")
@@ -176,7 +158,7 @@ def perform_pca_and_kmeans(data, output_file):
 def perform_time_series_analysis(data, output_file):
     time_cols = [col for col in data.columns if pd.api.types.is_datetime64_any_dtype(data[col])]
     if not time_cols:
-        return False  # No time series data
+        return False
     fig = px.line(data, x=time_cols[0], y=data.select_dtypes(include=[np.number]).columns[0], title="Time Series Analysis")
     fig.write_image(output_file)
     return True
@@ -221,14 +203,10 @@ def generate_story(summary, visualizations):
 # Function to save the final report
 def save_report(story, output_file):
     print(f"Saving the report to {output_file}...")
-
-    # Check if each file exists before adding it to the report
     report_content = "# Analysis Report\n\n"
     report_content += "## Key Insights\n\n"
     report_content += story
     report_content += "\n\n## Visualizations\n"
-
-    # Visualizations section: add only files that exist
     if os.path.exists("compressed_correlation_heatmap.png"):
         report_content += "- ![Correlation Heatmap](compressed_correlation_heatmap.png)\n"
     if os.path.exists("compressed_pca_kmeans.png"):
@@ -239,36 +217,20 @@ def save_report(story, output_file):
         report_content += "- ![Outlier Detection](compressed_outliers.png)\n"
     if os.path.exists("geographic_analysis.html"):
         report_content += "- Interactive Map: geographic_analysis.html\n"
-
-    # Write the content to the output file
     with open(output_file, "w", encoding="utf-8") as f:
         f.write(report_content)
-
     print("Report saved successfully!")
 
 # Main execution
 if __name__ == "__main__":
     data = load_data(csv_file)
     summary = summarize_data(data)
-
-    # Generate the correlation heatmap
     generate_correlation_heatmap(data, "compressed_correlation_heatmap.png")
-
-    # Generate the PCA and KMeans plot
     perform_pca_and_kmeans(data, "compressed_pca_kmeans.png")
-
-    # Perform time series analysis
     time_series_done = perform_time_series_analysis(data, "compressed_timeseries.png")
-
-    # Perform geographical analysis
     geo_done = perform_geographical_analysis(data, "geographic_analysis.html")
-
-    # Generate the outlier detection plot
     detect_and_plot_outliers(data, "compressed_outliers.png")
-    
-    # Generate the story
     story = generate_story(summary, ["compressed_correlation_heatmap.png", "compressed_pca_kmeans.png", "compressed_outliers.png"])
-    
     if story:
         save_report(story, "README.md")
         print("Analysis complete! Report saved to README.md.")

@@ -31,7 +31,6 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error, r2_score
 from sklearn.impute import SimpleImputer
 from sklearn.preprocessing import StandardScaler
-from sklearn.ensemble import RandomForestClassifier
 from sklearn.inspection import permutation_importance
 from geopy.distance import geodesic
 import plotly.express as px
@@ -273,19 +272,14 @@ def iterative_agentic_analysis(df: pd.DataFrame, summary: Dict) -> str:
     Generate a series of insights through an iterative process. This function will iterate over different 
     analysis types and summarize the findings based on the data.
     """
-    insights = []
-
-    # Iterate over analysis methods (e.g., regression, outliers, etc.)
+    insights = []  # Generate iterative insights
     if "correlation" in summary:
         insights.append("Correlation Analysis: Strong correlations found between ...")
-
     if "outliers" in summary:
         insights.append("Outlier Detection: Outliers identified in the following areas ...")
-
     if "regression" in summary:
         insights.append("Regression Analysis: The following regression results were found ...")
 
-    # Add more insights based on analysis methods
     return "\n".join(insights)
 
 def suggest_visualizations(df: pd.DataFrame, summary: Dict) -> List[str]:
@@ -293,17 +287,12 @@ def suggest_visualizations(df: pd.DataFrame, summary: Dict) -> List[str]:
     Suggest visualizations based on the provided summary and the data analysis results.
     """
     visualizations = []
-
     if "correlation" in summary:
         visualizations.append("correlation_heatmap.png")
-
     if "outliers" in summary:
         visualizations.append("outliers.png")
-
     if "regression" in summary:
         visualizations.append("regression_analysis.png")
-
-    # Add more visualizations based on the analysis methods
     return visualizations
 
 
@@ -348,8 +337,12 @@ def summarize_data(df: pd.DataFrame) -> Dict:
     }
 
 # === Main Execution ===
-def main(input_file: str, output_folder: str):
+def main(input_file: str, output_folder: str = None):
     df = load_data(input_file)
+    
+    # Set output folder to current directory if not provided
+    if output_folder is None:
+        output_folder = os.getcwd()
     
     os.makedirs(output_folder, exist_ok=True)
 
@@ -393,9 +386,8 @@ def main(input_file: str, output_folder: str):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Data Analysis Pipeline")
     parser.add_argument("input_file", help="Path to the input CSV file")
+    parser.add_argument("output_dir", nargs="?", default=os.getcwd(), help="Directory to save the output files (default is current directory)")
+
     args = parser.parse_args()
 
-    # Set output folder to the current working directory
-    output_folder = os.getcwd()
-
-    main(args.input_file, output_folder)
+    main(args.input_file, args.output_dir)

@@ -78,6 +78,69 @@ def clean_numeric_data(df: pd.DataFrame) -> pd.DataFrame:
     """Select numeric columns for analysis."""
     return df.select_dtypes(include=[np.number])
 
+# === Analysis Functions ===
+def outlier_detection(df: pd.DataFrame, output_path: str):
+    """Detect outliers using IQR method."""
+    numeric_df = clean_numeric_data(df)
+    if numeric_df.empty:
+        return None  # No numeric columns to analyze
+
+    # Compute the IQR (Interquartile Range)
+    Q1 = numeric_df.quantile(0.25)
+    Q3 = numeric_df.quantile(0.75)
+    IQR = Q3 - Q1
+    outliers = ((numeric_df < (Q1 - 1.5 * IQR)) | (numeric_df > (Q3 + 1.5 * IQR)))
+
+    # Plotting the outliers
+    plt.figure(figsize=(10, 6))
+    sns.boxplot(data=numeric_df, orient="h")
+    plt.title("Outlier Detection (IQR)")
+    save_plot(output_path)
+    return output_path
+
+def time_series_analysis(df, column, output_path):
+    """
+    Perform time series analysis on the given column and save the visualization.
+
+    Args:
+        df (pd.DataFrame): The dataset.
+        column (str): The name of the time series column.
+        output_path (str): The file path to save the visualization.
+
+    Returns:
+        str: Path to the saved visualization or None if the operation fails.
+    """
+    try:
+        # Ensure the column is in datetime format
+        df[column] = pd.to_datetime(df[column], errors="coerce")
+
+        # Drop rows where datetime conversion failed
+        df = df.dropna(subset=[column])
+
+        # Set the column as index for analysis
+        df = df.set_index(column).sort_index()
+
+        # Example visualization: Plotting the number of records over time
+        plt.figure(figsize=(10, 6))
+        df.resample("M").size().plot(title="Records Over Time", xlabel="Date", ylabel="Count")
+        plt.savefig(output_path)
+        plt.close()
+
+        return output_path
+    except Exception as e:
+        print(f"Error in time series analysis: {e}")
+        return None
+
+def geographic_analysis(df: pd.DataFrame, lat_col: str, lon_col: str, output_path: str):
+    """Analyze geographic data if latitude and longitude columns are present."""
+    if lat_col not in df.columns or lon_col not in df.columns:
+        return None
+
+    # Plotting the geographic data using Plotly
+    fig = px.scatter_geo(df, lat=lat_col, lon=lon_col, title="Geographic Distribution")
+    fig.write_image(output_path)
+    return output_path
+
 def correlation_heatmap(df: pd.DataFrame, output_path: str):
     """Generate and save a correlation heatmap of the numeric columns."""
     numeric_df = clean_numeric_data(df)
@@ -94,20 +157,6 @@ def correlation_heatmap(df: pd.DataFrame, output_path: str):
     save_plot(output_path)
     return output_path
 
-def detect_datetime_columns(df: pd.DataFrame) -> pd.DataFrame:
-    """Detect and parse datetime columns in the dataset."""
-    datetime_df = df.apply(lambda col: pd.to_datetime(col, errors='coerce')).dropna(axis=1)
-    return datetime_df if not datetime_df.empty else None
-
-def detect_geographical_columns(df: pd.DataFrame) -> tuple:
-    """Detect latitude and longitude columns."""
-    latitude_col = next((col for col in df.columns if 'lat' in col.lower()), None)
-    longitude_col = next((col for col in df.columns if 'lon' in col.lower()), None)
-    if latitude_col and longitude_col:
-        return latitude_col, longitude_col
-    return None, None
-
-# === Analysis Functions ===
 def regression_analysis(df: pd.DataFrame, output_path: str):
     """Perform regression analysis if a target column is suitable."""
     numeric_df = clean_numeric_data(df)
@@ -193,6 +242,18 @@ def auto_select_analysis(df: pd.DataFrame, output_path_prefix: str):
     else:
         return feature_importance_analysis(df, f"{output_path_prefix}_feature_importance.png")
 
+# === Data Summarization Function ===
+def summarize_data(df: pd.DataFrame) -> Dict[str, str]:
+    """Summarize the dataset (e.g., missing values, summary stats)."""
+    summary_stats = df.describe().transpose()
+    missing_values = df.isnull().sum()
+
+    summary = {
+        "summary_stats": summary_stats.to_string(),
+        "missing_values": missing_values.to_string(),
+    }
+    return summary
+
 def detect_and_plot_outliers(df: pd.DataFrame, output_path: str):
     """Detect and plot outliers using KMeans."""
     numeric_df = clean_numeric_data(df)
@@ -225,48 +286,6 @@ def detect_and_plot_outliers(df: pd.DataFrame, output_path: str):
     save_plot(output_path, fig)
     return output_path
 
-def time_series_analysis(df: pd.DataFrame, output_path: str):
-    """Perform time series analysis if datetime columns are present."""
-    datetime_df = detect_datetime_columns(df)
-    if datetime_df is None:
-        return None
-    plt.figure(figsize=(10, 6))
-    for col in datetime_df.columns:
-        plt.plot(datetime_df[col], label=col)
-    plt.title("Time Series Analysis")
-    plt.xlabel("Index")
-    plt.ylabel("Values")
-    plt.legend()
-    save_plot(output_path)
-    return output_path
-
-def geographical_analysis(df: pd.DataFrame, output_path: str, lat_col: str, lon_col: str):
-    """Perform geographical analysis if latitude and longitude are present."""
-    df = df.dropna(subset=[lat_col, lon_col])
-    fig = px.scatter_mapbox(
-        df,
-        lat=lat_col,
-        lon=lon_col,
-        title="Geographical Data",
-        mapbox_style="carto-positron",
-        zoom=1,
-    )
-    fig.write_image(output_path)
-    return output_path
-
-# === Reporting Functions ===
-def create_markdown_report(story: str, visualizations: List[str], output_path: str):
-    """Create README.md with links to PNGs."""
-    with open(output_path, 'w') as f:
-        f.write("# Analysis Report\n\n")
-        f.write(story)
-        f.write("\n## Visualizations\n")
-        for viz in visualizations:
-            if os.path.exists(viz):
-                # Use relative path for visualization links
-                relative_path = os.path.relpath(viz, start=os.path.dirname(output_path))
-                f.write(f"![{viz}]({relative_path})\n")
-
 def iterative_agentic_analysis(df: pd.DataFrame, summary: Dict) -> str:
     """
     Generate a series of insights through an iterative process. This function will iterate over different 
@@ -295,6 +314,18 @@ def suggest_visualizations(df: pd.DataFrame, summary: Dict) -> List[str]:
         visualizations.append("regression_analysis.png")
     return visualizations
 
+# === Reporting Functions ===
+def create_markdown_report(story: str, visualizations: List[str], output_path: str):
+    """Create README.md with links to PNGs."""
+    with open(output_path, 'w') as f:
+        f.write("# Analysis Report\n\n")
+        f.write(story)
+        f.write("\n## Visualizations\n")
+        for viz in visualizations:
+            if os.path.exists(viz):
+                # Use relative path for visualization links
+                relative_path = os.path.relpath(viz, start=os.path.dirname(output_path))
+                f.write(f"![{viz}]({relative_path})\n")
 
 # === Narrative Generation with AI Proxy ===
 def generate_story(summary: Dict, visualizations: List[str]) -> str:
@@ -325,61 +356,66 @@ def generate_story(summary: Dict, visualizations: List[str]) -> str:
     else:
         return f"Failed to generate story. Error {response.status_code}: {response.text}"
 
-def summarize_data(df: pd.DataFrame) -> Dict:
-    """
-    Summarize the dataset with key statistics and missing values.
-    """
-    summary_stats = df.describe().to_dict()
-    missing_values = df.isnull().sum().to_dict()
-    return {
-        "summary_stats": summary_stats,
-        "missing_values": missing_values
-    }
-
 # === Main Execution ===
+# Main Execution
 def main(input_file: str, output_folder: str = None):
+    """
+    Main function to process the dataset, perform analyses, and generate a report.
+
+    Args:
+        input_file (str): Path to the input dataset file.
+        output_folder (str, optional): Directory to save outputs. Defaults to current directory.
+    """
     df = load_data(input_file)
-    
+
     # Set output folder to current directory if not provided
     if output_folder is None:
         output_folder = os.getcwd()
-    
+
     os.makedirs(output_folder, exist_ok=True)
 
     # Generate summary for AI Proxy story generation
     summary = summarize_data(df)
-    
+
     # Iterative analysis of the dataset
     insights = iterative_agentic_analysis(df, summary)
-    
+
     # Suggest visualizations based on the analysis summary
     visualizations = suggest_visualizations(df, summary)
 
-    # Generate markdown report with insights and visualizations
-    story = generate_story(summary, visualizations)
-    create_markdown_report(insights, visualizations, f"{output_folder}/README.md")
-
-    # Run correlation heatmap
+    # Correlation heatmap
     heatmap_output = correlation_heatmap(df, f"{output_folder}/correlation_heatmap.png")
     if heatmap_output:
         visualizations.append(heatmap_output)
 
-    # Run outlier analysis
+    # Outlier detection and visualization
     outlier_output = detect_and_plot_outliers(df, f"{output_folder}/outliers.png")
     if outlier_output:
         visualizations.append(outlier_output)
 
-    # Run time series analysis
-    time_series_output = time_series_analysis(df, f"{output_folder}/time_series.png")
-    if time_series_output:
-        visualizations.append(time_series_output)
+    # Identify potential time series column
+    time_series_column = None
+    for col in df.columns:
+        if pd.api.types.is_datetime64_any_dtype(df[col]) or any(keyword in col.lower() for keyword in ["date", "time", "timestamp"]):
+            time_series_column = col
+            break
 
-    # Run regression or feature importance analysis (auto selection)
+    # Time series analysis if a suitable column is found
+    if time_series_column:
+        print(f"Time series column detected: {time_series_column}")
+        time_series_output = time_series_analysis(df, time_series_column, f"{output_folder}/time_series.png")
+        if time_series_output:
+            visualizations.append(time_series_output)
+    else:
+        print("No suitable time series column found. Skipping time series analysis.")
+
+    # Auto-analysis for regression/feature importance
     auto_analysis_output = auto_select_analysis(df, f"{output_folder}/auto_analysis")
     if auto_analysis_output:
         visualizations.append(auto_analysis_output)
 
-    # Final markdown report with insights and visualizations
+    # Generate markdown report with insights and visualizations
+    story = generate_story(summary, visualizations)
     create_markdown_report(story, visualizations, f"{output_folder}/README.md")
 
 

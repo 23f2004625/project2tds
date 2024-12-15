@@ -2,7 +2,22 @@ import os
 import sys
 import subprocess
 
-# Function to install Python packages if not already installed
+# Ensure pip is installed
+def ensure_pip_installed():
+    try:
+        subprocess.check_call([sys.executable, "-m", "pip", "--version"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        print("pip not found. Installing pip...")
+        try:
+            import ensurepip
+            ensurepip.bootstrap()
+            subprocess.check_call([sys.executable, "-m", "pip", "install", "--upgrade", "pip"])
+            print("pip installed successfully!")
+        except Exception as e:
+            print(f"Failed to install pip: {e}")
+            sys.exit(1)
+
+# Install Python packages if not already installed
 def install_package(package_name, submodules=None):
     """Installs a Python package if not already installed."""
     try:
@@ -14,7 +29,9 @@ def install_package(package_name, submodules=None):
         print(f"Installing package: {package_name}...")
         subprocess.check_call([sys.executable, "-m", "pip", "install", package_name])
 
-# Install required libraries
+# Ensure pip is installed and install required libraries
+ensure_pip_installed()
+
 required_packages = [
     ("pandas", None),
     ("seaborn", None),
@@ -33,24 +50,7 @@ required_packages = [
 for package, submodules in required_packages:
     install_package(package, submodules)
 
-# Validate and retrieve the AI Proxy Token
-try:
-    AI_PROXY_TOKEN = os.environ["AIPROXY_TOKEN"]
-except KeyError:
-    print("Error: AIPROXY_TOKEN environment variable is not set.")
-    sys.exit(1)
-
-# Validate command-line arguments
-if len(sys.argv) != 2:
-    print("Usage: python autolysis.py <csv_file>")
-    sys.exit(1)
-
-csv_file = sys.argv[1]
-if not os.path.exists(csv_file):
-    print(f"Error: File '{csv_file}' does not exist.")
-    sys.exit(1)
-
-# Import dependencies
+# Now we import all required libraries
 import warnings
 import pandas as pd
 import seaborn as sns
@@ -72,6 +72,23 @@ import plotly.express as px
 # Suppress warnings
 warnings.filterwarnings("ignore")
 set_start_method("loky", force=True)
+
+# Validate and retrieve the AI Proxy Token
+try:
+    AI_PROXY_TOKEN = os.environ["AIPROXY_TOKEN"]
+except KeyError:
+    print("Error: AIPROXY_TOKEN environment variable is not set.")
+    sys.exit(1)
+
+# Validate command-line arguments
+if len(sys.argv) != 2:
+    print("Usage: python autolysis.py <csv_file>")
+    sys.exit(1)
+
+csv_file = sys.argv[1]
+if not os.path.exists(csv_file):
+    print(f"Error: File '{csv_file}' does not exist.")
+    sys.exit(1)
 
 # Function to detect file encoding
 def detect_encoding(file_path):
